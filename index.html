@@ -1,0 +1,201 @@
+<html>
+<head>
+  <title>tool</title>
+  <style>
+
+.container {
+  user-select: none;
+  -webkit-user-drag: none;
+
+  margin: 10px;
+  border: 1px solid gray;
+  width: 80vw;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.container > .row {
+  flex-grow: 1;
+
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+.container > .row > .cell {
+  flex-grow: 1;
+  border: 1px solid gray;
+}
+.container > .row > .cell.fill {
+  background-color: lightgray;
+}
+
+  </style>
+</head>
+<body>
+  <div>
+    <input id="w" type="number" value="32">
+    <input id="h" type="number" value="32">
+    <button id="button" type="button" >create</button>
+    <input id="loadStr" type="text" value="">
+    <button id="load_button" type="button" >load</button>
+  </div>
+  <div id="cell_container" class="container">
+  </div>
+  <button id="export_button" type="button" style="display: none">export</button>
+  <input id="b64" size="80" type="text" value="" readonly>
+
+<script>
+
+function init() {
+  let isPress = false;
+  let flagWrite = false;
+  let data = [];
+  const button = document.getElementById('button');
+  const container = document.getElementById('cell_container');
+  const loadButton = document.getElementById('load_button');
+  const exportButton = document.getElementById('export_button');
+
+  function initCells(w, h, cellData) {
+    container.innerHTML = "";
+    for (let y=0; y < h; y++) {
+      const row = document.createElement('div');
+      row.classList.add('row');
+      for (let x=0; x < w; x++) {
+        const cell = document.createElement('div');
+        cell.dataset.x = x;
+        cell.dataset.y = y;
+        cell.classList.add('cell');
+        if (cellData[y][x] === 1) {
+          cell.classList.add('fill');
+        }
+        row.appendChild(cell);
+      }
+      container.appendChild(row);
+    }
+    data = cellData;
+    exportButton.style.display = 'block';
+  }
+
+  button.addEventListener('click', e=> {
+    let w = h = null;
+    try {
+      w = parseInt(document.getElementById('w').value);
+      h = parseInt(document.getElementById('h').value);
+    } catch(e) {
+      console.error(e);
+      return
+    }
+    let cellData = [...Array(h)].map(() => ([...Array(w)].map(() => (0))));
+    initCells(w, h, cellData);
+  });
+  function fillCell(flag, cell) {
+      const x = parseInt(cell.dataset.x);
+      const y = parseInt(cell.dataset.y);
+      if (flag && data[y][x] === 0) {
+        data[y][x] = 1;
+        cell.classList.add('fill');
+      } else if (!flag && data[y][x] !== 0) {
+        data[y][x] = 0;
+        cell.classList.remove('fill');
+      }
+  }
+  container.addEventListener('mousedown', e =>{
+    // console.log(e);
+    if (!isPress) {
+      isPress = true;
+      const t = e.target;
+      const x = parseInt(t.dataset.x);
+      const y = parseInt(t.dataset.y);
+      flagWrite = data[y][x] === 0;
+      fillCell(flagWrite, e.target);
+    }
+  });
+  container.addEventListener('mouseup', e => {
+    // console.log(e);
+    isPress = false;
+  });
+  container.addEventListener('mousemove', e => {
+    if (isPress && e.target.classList.contains('cell')) {
+      // console.log(e.offsetX, e.offsetY);
+      fillCell(flagWrite, e.target);
+    }
+  });
+
+  exportButton.addEventListener('click', e => {
+    if (!data) {
+      return
+    }
+
+    const size = {
+      w: data[0].length, 
+      h: data.length,
+    };
+    const o = {
+      size: {
+        w: data[0].length, 
+        h: data.length,
+      },
+      byteData: null
+    };
+    // required size of bits
+    let reqBits = size.w * size.h;
+    // Required size of bytes
+    let reqBytes = Math.floor(reqBits/8) + ((reqBits % 8) > 0 ? (8 - reqBits % 8) : 0);
+    let arr = new Uint8Array(reqBytes + 2);
+    let n = 0;
+    let b = 0;
+    let i = 2;
+    arr[0] = size.w;
+    arr[1] = size.h;
+    for (let y = 0; y < o.size.h; y++) {
+      for (let x = 0; x < o.size.w; x++) {
+        b = data[y][x] << (7 - n) | b;
+        //console.log('n', n, 'data', data[y][x], 'i', i, 'b', b);
+        if (n === 7) {
+          arr[i] = b;
+          i += 1;
+          b = 0;
+          //console.log('byte', i, b);
+        }
+        n = (n + 1) % 8;
+      }
+    }
+    if (n > 0) {
+      arr[i] = b;
+    }
+    //console.log(arr);
+    let base64String = btoa(String.fromCharCode(...arr));
+    console.log(base64String);
+    var textarea = document.getElementById("b64");
+    textarea.value = base64String;
+    textarea.select();
+    document.execCommand("copy");
+  });
+
+  loadButton.addEventListener('click', e => {
+    var loadStr = document.getElementById("loadStr");
+    let bin = atob(loadStr.value);
+    let bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+    const w = bytes[0];
+    const h = bytes[1];
+    let cellData = [...Array(h)].map((_, y) => ([...Array(w)].map((_, x) =>
+      {
+        const nbit = y*w + x;
+        const m = nbit % 8;
+        const byte = (nbit - m) / 8;
+        const b = (bytes[byte + 2] & (2 ** (7 - m))) > 0 ? 1 : 0;
+        return b
+      }
+    )));
+    initCells(w, h, cellData);
+  });
+}
+init();
+</script>
+
+</body>
+</html>
